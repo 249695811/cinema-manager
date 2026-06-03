@@ -203,8 +203,13 @@ def cmd_auto(query: str, config: dict):
                                  omdb_key=config.get("omdb_api_key", ""),
                                  genre_cache_file=os.path.join(os.path.dirname(__file__), "genre_cache.json"))
 
+            # Build mini4k URL for genre scraping if applicable
+            mini4k_url = ""
+            if best.site == "mini4k" and best.url.startswith("/"):
+                mini4k_url = f"https://www.mini4k.net{best.url}"
+
             for fid in saved_fids:
-                org_result = lib.organize_movie(fid, best.title, info.get("year", ""))
+                org_result = lib.organize_movie(fid, best.title, info.get("year", ""), mini4k_url)
                 if org_result.get("status") == "ok":
                     print(f"📁 Organized: {org_result['path']}", file=sys.stderr)
                 else:

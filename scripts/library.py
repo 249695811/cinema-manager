@@ -38,8 +38,9 @@ GENRE_MAP = {
 }
 
 
-def lookup_genre(title: str, year: str = "", omdb_key: str = "", cache_file: str = "") -> str:
-    """Look up movie genre. Uses OMDB API + local cache. Returns Chinese genre name."""
+def lookup_genre(title: str, year: str = "", omdb_key: str = "", cache_file: str = "",
+                 mini4k_url: str = "") -> str:
+    """Look up movie genre. OMDB → mini4k scrape → cache → '其他'."""
     cache = {}
     if cache_file:
         try:
@@ -48,14 +49,13 @@ def lookup_genre(title: str, year: str = "", omdb_key: str = "", cache_file: str
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
-    # Check cache first
     cache_key = f"{title} ({year})" if year else title
     if cache_key in cache:
         return cache[cache_key]
 
     genre = "其他"
 
-    # Try OMDB API (free, 1000 req/day)
+    # Method 1: OMDB API (free, 1000 req/day)
     if omdb_key:
         try:
             import urllib.parse
@@ -66,13 +66,34 @@ def lookup_genre(title: str, year: str = "", omdb_key: str = "", cache_file: str
                 capture_output=True, text=True, timeout=10
             )
             data = json.loads(result.stdout)
-            omdb_genre = data.get("Genre", "")  # e.g. "Action, Thriller"
+            omdb_genre = data.get("Genre", "")
             if omdb_genre:
                 genre = _map_omdb_genre(omdb_genre.split(",")[0].strip())
         except Exception:
             pass
 
-    # Cache the result
+    # Method 2: Scrape genre from mini4k page
+    if genre == "其他" and mini4k_url:
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "--connect-timeout", "8", mini4k_url],
+                capture_output=True, text=True, timeout=15
+            )
+            # Extract from <span class="genre">...<a>动作</a>...</span>
+            genre_match = re.search(
+                r'class="genre[^"]*"[^>]*>(.*?)</span>', result.stdout, re.S
+            )
+            if genre_match:
+                genres_text = genre_match.group(1)
+                genres = re.findall(r'>([^<]+)</a>', genres_text)
+                if genres:
+                    # Clean and take first genre
+                    first_genre = genres[0].strip().rstrip(',').strip()
+                    genre = GENRE_MAP.get(first_genre, first_genre)
+        except Exception:
+            pass
+
+    # Cache result
     if cache_file and genre != "其他":
         cache[cache_key] = genre
         try:
@@ -240,7 +261,8 @@ class LibraryManager:
         self._root_id = self.get_or_create_folder(self.library_root)
         return self._root_id
 
-    def organize_movie(self, source_fid: str, title: str, year: str = "") -> dict:
+    def organize_movie(self, source_fid: str, title: str, year: str = "",
+                       mini4k_url: str = "") -> dict:
         """
         Organize a saved movie file into the library.
         Structure: library_root/Genre/ Movie Name (Year)/files
@@ -267,7 +289,7 @@ class LibraryManager:
         folder_name = format_folder_name(info)
 
         # Look up genre → create genre subfolder
-        genre = lookup_genre(info.get("cn_name") or info.get("en_name") or info.get("title", ""), info.get("year", ""), self.omdb_key, self.genre_cache_file)
+        genre = lookup_genre(info.get("cn_name") or info.get("en_name") or info.get("title", ""), info.get("year", ""), self.omdb_key, self.genre_cache_file, mini4k_url)
         print(f"🎭 Genre: {genre}", file=sys.stderr)
         genre_id = self.get_or_create_folder(genre, root_id)
         if not genre_id:

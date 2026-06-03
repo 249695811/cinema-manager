@@ -5,9 +5,9 @@
     "cookie": ""
   },
   "plugins": {
-    "wp365": {
-      "enabled": true
-    }
+    "wp365": { "enabled": true },
+    "mini4k": { "enabled": false, "username": "", "password": "" }
   },
-  "save_folder": "影视资源"
+  "save_folder": "夸克影视",
+  "omdb_api_key": ""
 }
