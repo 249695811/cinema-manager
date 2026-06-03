@@ -1,25 +1,52 @@
 # 🎬 Cinema Manager - Hermes Skill
 
-A [Hermes Agent](https://github.com/nousresearch/hermes-agent) skill for automated movie/TV resource search, Quark cloud drive save, and media library management.
+A [Hermes Agent](https://github.com/nousresearch/hermes-agent) skill for automated movie/TV resource search, Quark cloud drive save, and media library management with auto genre classification.
 
 ## Features
 
 - 🔍 **Multi-site search** — plugin system, add any resource site
 - 📊 **Quality scoring** — auto-ranks by resolution, source, HDR, audio, codec, subtitles
 - ☁️ **Quark save** — one-click save to your Quark cloud drive
+- 🎭 **Genre auto-classification** — OMDB API or resource site scraping, with local cache
 - 📁 **Library management** — auto-organize files for Infuse/Plex/Jellyfin
 
-## Installation
+## Quick Start
 
 ```bash
 git clone https://github.com/249695811/cinema-manager.git ~/.hermes/skills/cinema-manager
 pip install httpx
-cp ~/.hermes/skills/cinema-manager/config.example.json ~/.hermes/skills/cinema-manager/config.json
+python3 ~/.hermes/skills/cinema-manager/scripts/setup.py
+```
+
+The setup wizard will guide you through:
+
+1. **夸克网盘登录** — 账号密码（推荐）或 Cookie
+2. **资源站选择** — wp365（免费）或 mini4k（需会员）
+3. **自动分类** — OMDB API（推荐）/ 资源站抓取 / 关闭
+4. **保存目录** — 夸克网盘中的文件夹名
+
+## Usage
+
+### Via Hermes Agent
+
+Just tell your agent:
+- "我要看星际穿越"
+- "搜一下流浪地球2"
+- "帮我整理一下夸克网盘里的影视资源"
+
+### CLI
+
+```bash
+python3 scripts/cinema.py search "流浪地球"        # Search
+python3 scripts/cinema.py auto "星际穿越"           # Search + save + organize
+python3 scripts/cinema.py save "https://pan.quark.cn/s/xxx"  # Save a link
+python3 scripts/cinema.py organize <fid> "电影名" --type movie  # Organize
+python3 scripts/cinema.py plugins                    # List plugins
 ```
 
 ## Configuration
 
-Edit `config.json`:
+Edit `config.json` (created by setup wizard):
 
 ```json
 {
@@ -28,54 +55,73 @@ Edit `config.json`:
     "password": "your_password"
   },
   "plugins": {
-    "wp365": { "enabled": true }
+    "wp365": { "enabled": true },
+    "mini4k": { "enabled": false, "username": "", "password": "" }
   },
-  "save_folder": "影视资源"
+  "save_folder": "夸克影视",
+  "omdb_api_key": ""
 }
 ```
 
-**Quark auth** — pick one:
-- `username` + `password` — auto-login, recommended
-- `cookie` — manual, expires periodically
+### Quark Auth
 
-## Usage
+| Method | Pros | Cons |
+|--------|------|------|
+| `username` + `password` | Auto-refreshes | Need account |
+| `cookie` | No account needed | Expires ~7 days |
 
-### CLI
+### Resource Plugins
 
-```bash
-# Search
-python3 scripts/cinema.py search "流浪地球"
+| Plugin | Auth | Notes |
+|--------|------|-------|
+| `wp365` | No | Free aggregation, quark + baidu links |
+| `mini4k` | Paid | Premium 4K resources, best genre data |
 
-# Auto search + save + organize
-python3 scripts/cinema.py auto "星际穿越"
+### Genre Classification
 
-# Save a specific link
-python3 scripts/cinema.py save "https://pan.quark.cn/s/xxx"
+Three modes:
 
-# Organize a saved file into library
-python3 scripts/cinema.py organize <file_id> "电影名" --type movie
-python3 scripts/cinema.py organize <file_id> "剧名" --type tv --season 1 --episode 3
+| Mode | Config | Accuracy | Cost |
+|------|--------|----------|------|
+| OMDB API | `"omdb_api_key": "your_key"` | High | Free, 1000 req/day |
+| Resource scrape | `"omdb_api_key": ""` + mini4k enabled | Medium | Free |
+| Disabled | `"omdb_api_key": ""`, no mini4k | N/A | Free |
 
-# List plugins
-python3 scripts/cinema.py plugins
+Get a free OMDB key at [omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx) — just enter your email.
+
+Genre results cached in `scripts/genre_cache.json`.
+
+## Library Structure
+
+```
+夸克影视/
+├── 动作/
+│   └── 金谍行动 (2026)/
+│       └── In.the.Grey.2026.2160p.WEB-DL.mkv
+├── 剧情/
+│   └── 大濛 (2025)/
+│       └── A.Foggy.Tale.2025.1080p.NF.WEB-DL.mkv
+├── 科幻/
+│   └── 流浪地球2 (2023)/
+│       └── 流浪地球2 (2023).mkv
+└── 其他/
+    └── 未识别类型的电影 (2024)/
+
+夸克影视/剧情/百年孤独/     ← TV shows
+├── Season 01/
+│   ├── 百年孤独 - S01E01.mkv
+│   └── 百年孤独 - S01E02.mkv
 ```
 
-### Via Hermes Agent
-
-Just tell your agent:
-- "搜一下流浪地球2"
-- "我要看星际穿越"
-- "帮我整理一下夸克网盘里的影视资源"
+Infuse/Plex compatible naming:
+- Movie: `Movie Name (Year).ext`
+- TV: `Show Name/Season XX/Show Name - SXXEXX.ext`
 
 ## Adding Resource Sites
-
-This is a **plugin system**. To add your own resource site:
 
 ```bash
 cp scripts/plugins/example.py scripts/plugins/your_site.py
 ```
-
-Implement two methods:
 
 ```python
 from plugins import ResourcePlugin, ResourceResult
@@ -83,52 +129,16 @@ from plugins import ResourcePlugin, ResourceResult
 class Plugin(ResourcePlugin):
     name = "your_site"
     display_name = "Your Site Name"
-    requires_auth = False  # True if login needed
+    requires_auth = False
     url = "https://your-site.com"
 
     def search(self, query: str, page: int = 1) -> list[ResourceResult]:
-        """Search for resources. Return list of ResourceResult."""
-        # Call your site's search API
-        # Return ResourceResult(title=..., source="quark", url=..., site=self.name)
         ...
-
     def extract_link(self, resource: ResourceResult) -> str | None:
-        """Extract actual Quark share URL from search result."""
-        # If search() returns direct links, return resource.url
-        # Otherwise, call your site's extraction API
         ...
 ```
 
-Then enable in `config.json`:
-```json
-{ "plugins": { "your_site": { "enabled": true } } }
-```
-
-See [`scripts/plugins/example.py`](scripts/plugins/example.py) for a full template.
-
-## Library Management
-
-After saving files to Quark, the library manager organizes them for media players:
-
-```
-影视资源/
-├── 星际穿越 (2014)/
-│   └── 星际穿越 (2014).mkv
-├── 流浪地球2 (2023)/
-│   └── 流浪地球2 (2023).mkv
-└── 权力的游戏/
-    ├── Season 01/
-    │   ├── 权力的游戏 - S01E01.mkv
-    │   └── 权力的游戏 - S01E02.mkv
-    └── Season 02/
-        └── ...
-```
-
-This naming convention works with:
-- ✅ Infuse
-- ✅ Plex
-- ✅ Jellyfin
-- ✅ Emby
+Enable: `{ "plugins": { "your_site": { "enabled": true } } }`
 
 ## Quality Scoring
 
