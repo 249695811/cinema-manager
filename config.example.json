@@ -7,13 +7,7 @@
   "plugins": {
     "wp365": {
       "enabled": true
-    },
-    "mini4k": {
-      "enabled": false,
-      "username": "",
-      "password": ""
     }
   },
-  "default_quality": "4k",
   "save_folder": "影视资源"
 }

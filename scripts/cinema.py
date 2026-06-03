@@ -6,6 +6,7 @@ Usage:
     cinema.py search <query>           Search all enabled plugins
     cinema.py save <quark_url>         Save a quark share link
     cinema.py auto <query>             Search + auto-save best version
+    cinema.py organize <fid> <title>   Organize saved file into library
     cinema.py plugins                  List available plugins
 """
 
@@ -20,6 +21,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from plugins import ResourcePlugin, ResourceResult
 from quark import QuarkClient
+from library import LibraryManager
 
 CONFIG_PATHS = [
     SCRIPT_DIR.parent / "config.json",
@@ -55,6 +57,18 @@ def load_plugins(config: dict) -> list:
             print(f"⚠️  Failed to load plugin {module_name}: {e}", file=sys.stderr)
 
     return plugins
+
+
+def get_quark_client(config: dict) -> QuarkClient:
+    quark_conf = config.get("quark", {})
+    client = QuarkClient(
+        username=quark_conf.get("username", ""),
+        password=quark_conf.get("password", ""),
+        cookie=quark_conf.get("cookie", ""),
+    )
+    if not client.cookie:
+        client.login()
+    return client
 
 
 # ── Quality Scoring ──
@@ -113,15 +127,7 @@ def cmd_search(query: str, config: dict):
 
 
 def cmd_save(share_url: str, config: dict, folder: str = ""):
-    quark_conf = config.get("quark", {})
-    client = QuarkClient(
-        username=quark_conf.get("username", ""),
-        password=quark_conf.get("password", ""),
-        cookie=quark_conf.get("cookie", ""),
-    )
-    if not client.cookie:
-        client.login()
-
+    client = get_quark_client(config)
     print(f"☁️  Saving to Quark: {share_url}", file=sys.stderr)
     result = client.save_share(share_url, folder_name=folder or config.get("save_folder", ""))
     print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -134,6 +140,7 @@ def cmd_auto(query: str, config: dict):
         print("❌ No plugins enabled.")
         return
 
+    # Search
     all_results = []
     for plugin in plugins:
         print(f"🔍 Searching {plugin.display_name}...", file=sys.stderr)
@@ -176,22 +183,32 @@ def cmd_auto(query: str, config: dict):
 
     print(f"   URL: {share_url}", file=sys.stderr)
 
-    quark_conf = config.get("quark", {})
-    client = QuarkClient(
-        username=quark_conf.get("username", ""),
-        password=quark_conf.get("password", ""),
-        cookie=quark_conf.get("cookie", ""),
-    )
-    if not client.cookie:
-        client.login()
-
+    # Save
+    client = get_quark_client(config)
     folder = config.get("save_folder", "影视资源")
     print(f"☁️  Saving to Quark/{folder}...", file=sys.stderr)
     result = client.save_share(share_url, folder_name=folder)
 
     status = result.get("status", 0)
     if status == 200:
-        print(f"✅ Saved!", file=sys.stderr)
+        # Organize into library
+        task_data = result.get("task_result", {}).get("data", {})
+        save_as = task_data.get("save_as", {})
+        saved_fids = save_as.get("save_as_top_fids", [])
+
+        if saved_fids:
+            from library import parse_movie_info
+            info = parse_movie_info(best.title)
+            lib = LibraryManager(client, library_root=folder)
+
+            for fid in saved_fids:
+                org_result = lib.organize_movie(fid, best.title, info.get("year", ""))
+                if org_result.get("status") == "ok":
+                    print(f"📁 Organized: {org_result['path']}", file=sys.stderr)
+                else:
+                    print(f"⚠️  Organize failed: {org_result.get('error')}", file=sys.stderr)
+
+        print(f"✅ Done!", file=sys.stderr)
     else:
         print(f"❌ Failed: {result.get('message', 'unknown')}", file=sys.stderr)
 
@@ -199,8 +216,30 @@ def cmd_auto(query: str, config: dict):
                      indent=2, ensure_ascii=False))
 
 
+def cmd_organize(fid: str, title: str, config: dict, content_type: str = "movie",
+                 season: int = 1, episode: int = 0):
+    client = get_quark_client(config)
+    lib = LibraryManager(client, library_root=config.get("save_folder", "影视资源"))
+
+    if content_type == "tv":
+        result = lib.organize_tv_show(fid, title, season=season, episode=episode)
+    else:
+        result = lib.organize_movie(fid, title)
+
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return result
+
+
 def cmd_plugins(config: dict):
     plugins = load_plugins(config)
+    if not plugins:
+        print("No plugins found.")
+        print("\nTo add a resource site, create a plugin file:")
+        print("  cp scripts/plugins/example.py scripts/plugins/your_site.py")
+        print("  # Edit your_site.py, implement search() and extract_link()")
+        print('  # Add to config.json: "your_site": {"enabled": true}')
+        return
+
     print("Available plugins:")
     for p in plugins:
         auth = "🔑" if p.requires_auth else "🆓"
@@ -220,17 +259,41 @@ def main():
         if not query:
             print("Usage: cinema.py search <query>"); sys.exit(1)
         cmd_search(query, config)
+
     elif cmd == "save":
         if len(sys.argv) < 3:
             print("Usage: cinema.py save <quark_share_url>"); sys.exit(1)
         cmd_save(sys.argv[2], config)
+
     elif cmd == "auto":
         query = " ".join(sys.argv[2:])
         if not query:
             print("Usage: cinema.py auto <query>"); sys.exit(1)
         cmd_auto(query, config)
+
+    elif cmd == "organize":
+        if len(sys.argv) < 4:
+            print("Usage: cinema.py organize <file_id> <title> [--type movie|tv] [--season N] [--episode N]")
+            sys.exit(1)
+        fid = sys.argv[2]
+        title = sys.argv[3]
+        content_type = "movie"
+        season, episode = 1, 0
+        i = 4
+        while i < len(sys.argv):
+            if sys.argv[i] == "--type" and i + 1 < len(sys.argv):
+                content_type = sys.argv[i + 1]; i += 2
+            elif sys.argv[i] == "--season" and i + 1 < len(sys.argv):
+                season = int(sys.argv[i + 1]); i += 2
+            elif sys.argv[i] == "--episode" and i + 1 < len(sys.argv):
+                episode = int(sys.argv[i + 1]); i += 2
+            else:
+                i += 1
+        cmd_organize(fid, title, config, content_type, season, episode)
+
     elif cmd == "plugins":
         cmd_plugins(config)
+
     else:
         print(f"Unknown command: {cmd}\n{__doc__}")
         sys.exit(1)
