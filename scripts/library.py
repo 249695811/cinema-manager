@@ -184,14 +184,35 @@ class LibraryManager:
         if year:
             info["year"] = year
 
-        # Create movie folder
         folder_name = format_folder_name(info)
+
+        if is_dir:
+            # Source is already a folder → rename it directly, no wrapper
+            if original_name != folder_name:
+                try:
+                    self._api("rename_file", source_fid, folder_name)
+                    print(f"✏️  Renamed folder: {original_name} → {folder_name}", file=sys.stderr)
+                except Exception as e:
+                    print(f"⚠️  Rename failed: {e}", file=sys.stderr)
+            # Move to library root
+            try:
+                self._api("move_files", [source_fid], root_id)
+                return {
+                    "status": "ok",
+                    "path": f"{self.library_root}/{folder_name}",
+                    "folder_id": source_fid,
+                    "kept_original": False,
+                }
+            except Exception as e:
+                return {"error": f"Move failed: {e}"}
+
+        # Source is a file → create folder and move file into it
         folder_id = self.get_or_create_folder(folder_name, root_id)
         if not folder_id:
             return {"error": f"Failed to create folder: {folder_name}"}
 
         # Decide: keep original name or rename
-        if not is_dir and original_name:
+        if original_name:
             if is_scene_name(original_name):
                 # Scene-standard name → keep as-is
                 print(f"📋 Keeping original name: {original_name}", file=sys.stderr)
