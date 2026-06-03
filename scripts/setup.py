@@ -4,9 +4,45 @@
 import json
 import os
 import sys
+import glob
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
-EXAMPLE_PATH = os.path.join(os.path.dirname(__file__), "..", "config.example.json")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SKILL_DIR = os.path.join(SCRIPT_DIR, "..")
+CONFIG_PATH = os.path.join(SKILL_DIR, "config.json")
+EXAMPLE_PATH = os.path.join(SKILL_DIR, "config.example.json")
+PLUGINS_DIR = os.path.join(SCRIPT_DIR, "plugins")
+
+
+def discover_plugins() -> list[dict]:
+    """Auto-discover available plugins from the plugins directory."""
+    plugins = []
+    for path in sorted(glob.glob(os.path.join(PLUGINS_DIR, "*.py"))):
+        name = os.path.basename(path).replace(".py", "")
+        if name.startswith("_") or name == "__init__":
+            continue
+        try:
+            spec = {}
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("name ="):
+                        spec["name"] = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith("display_name ="):
+                        spec["display_name"] = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith("requires_auth ="):
+                        spec["requires_auth"] = "True" in line
+                    elif line.startswith("url ="):
+                        spec["url"] = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if len(spec) >= 3:
+                        break
+            spec.setdefault("name", name)
+            spec.setdefault("display_name", name)
+            spec.setdefault("requires_auth", False)
+            spec.setdefault("url", "")
+            plugins.append(spec)
+        except Exception:
+            plugins.append({"name": name, "display_name": name, "requires_auth": False, "url": ""})
+    return plugins
 
 
 def load_config() -> dict:
@@ -18,7 +54,7 @@ def load_config() -> dict:
             return json.load(f)
     return {
         "quark": {"username": "", "password": "", "cookie": ""},
-        "plugins": {"wp365": {"enabled": True}, "mini4k": {"enabled": False}},
+        "plugins": {},
         "save_folder": "夸克影视",
         "omdb_api_key": "",
     }
@@ -42,6 +78,7 @@ def main():
     print("=" * 50)
 
     config = load_config()
+    available_plugins = discover_plugins()
 
     # ── Step 1: Quark Auth ──
     print("\n📁 第一步：夸克网盘登录\n")
@@ -56,7 +93,7 @@ def main():
         password = ask("夸克密码", config["quark"].get("password", ""))
         config["quark"]["username"] = username
         config["quark"]["password"] = password
-        config["quark"]["cookie"] = ""  # Clear cookie if using account
+        config["quark"]["cookie"] = ""
     else:
         print("\n  获取Cookie：浏览器打开 pan.quark.cn → F12 → Application → Cookies")
         print("  复制所有cookie内容粘贴过来\n")
@@ -66,32 +103,43 @@ def main():
         config["quark"]["password"] = ""
 
     # ── Step 2: Resource Sites ──
-    print("\n🔍 第二步：资源站配置\n")
-    print("  wp365 — 免费聚合站，夸克+百度链接，无需注册")
-    print("  mini4k — 4K资源站，需付费会员账号")
-    print()
+    print(f"\n🔍 第二步：资源站配置（发现 {len(available_plugins)} 个插件）\n")
 
-    wp365 = ask("启用 wp365？(y/n)", "y")
-    config["plugins"]["wp365"]["enabled"] = wp365.lower() == "y"
-
-    mini4k = ask("启用 mini4k？(y/n)", "n")
-    if mini4k.lower() == "y":
-        config["plugins"]["mini4k"]["enabled"] = True
-        config["plugins"]["mini4k"]["username"] = ask("mini4k 账号")
-        config["plugins"]["mini4k"]["password"] = ask("mini4k 密码")
+    if not available_plugins:
+        print("  未发现插件，请将插件 .py 文件放入 scripts/plugins/ 目录")
     else:
-        config["plugins"]["mini4k"]["enabled"] = False
+        for i, plugin in enumerate(available_plugins, 1):
+            auth_tag = "（需登录）" if plugin["requires_auth"] else "（免费）"
+            url_tag = f" {plugin['url']}" if plugin["url"] else ""
+            print(f"  {i}. {plugin['display_name']}{auth_tag}{url_tag}")
+        print()
+
+        for plugin in available_plugins:
+            current = config.get("plugins", {}).get(plugin["name"], {}).get("enabled", False)
+            default = "y" if current else "n"
+            choice = ask(f"启用 {plugin['display_name']}？(y/n)", default)
+
+            if plugin["name"] not in config["plugins"]:
+                config["plugins"][plugin["name"]] = {}
+
+            if choice.lower() == "y":
+                config["plugins"][plugin["name"]]["enabled"] = True
+                if plugin["requires_auth"]:
+                    config["plugins"][plugin["name"]]["username"] = ask(f"  {plugin['display_name']} 账号")
+                    config["plugins"][plugin["name"]]["password"] = ask(f"  {plugin['display_name']} 密码")
+            else:
+                config["plugins"][plugin["name"]]["enabled"] = False
 
     # ── Step 3: Genre Classification ──
     print("\n🎭 第三步：自动类型分类\n")
     print("  影片会自动归入 动作/剧情/科幻 等文件夹")
     print()
-    print("  推荐：OMDB API（免费，1000次/天，准确率高）")
-    print("  备选：从资源站页面抓取（免费，无需注册，准确率一般）")
-    print("  关闭：不分类，所有影片放在一个目录下")
+    print("  方式一：OMDB API（免费，1000次/天，准确率高）")
+    print("  方式二：从资源站页面抓取（免费，准确率取决于资源站）")
+    print("  方式三：不分类，所有影片平铺在保存目录下")
     print()
 
-    genre_choice = ask("选择分类方式 (1=OMDB推荐, 2=仅资源站抓取, 3=不分类)", "1")
+    genre_choice = ask("选择 (1=OMDB, 2=资源站抓取, 3=不分类)", "1")
 
     if genre_choice == "1":
         print("\n  获取OMDB Key：")
@@ -99,14 +147,14 @@ def main():
         print("  2. 选择 FREE，填写邮箱")
         print("  3. 收到邮件，复制 API Key")
         print()
-        omdb_key = ask("OMDB API Key")
+        omdb_key = ask("OMDB API Key", config.get("omdb_api_key", ""))
         config["omdb_api_key"] = omdb_key
     elif genre_choice == "2":
         config["omdb_api_key"] = ""
-        print("  → 将从资源站页面抓取类型信息（mini4k效果最好）")
+        print("  → 将从资源站页面抓取类型信息")
     else:
         config["omdb_api_key"] = ""
-        print("  → 不自动分类，所有影片放在 save_folder 根目录")
+        print("  → 不自动分类")
 
     # ── Step 4: Save Folder ──
     print("\n📂 第四步：保存目录\n")
@@ -127,7 +175,7 @@ def main():
     else:
         print("  ⚠️  夸克未配置！")
 
-    enabled = [k for k, v in config["plugins"].items() if v.get("enabled")]
+    enabled = [k for k, v in config.get("plugins", {}).items() if v.get("enabled")]
     print(f"  资源站：{', '.join(enabled) if enabled else '无'}")
     print(f"  保存目录：{config['save_folder']}")
 

@@ -18,10 +18,9 @@ pip install httpx
 python3 ~/.hermes/skills/cinema-manager/scripts/setup.py
 ```
 
-The setup wizard will guide you through:
-
+Setup wizard walks you through:
 1. **夸克网盘登录** — 账号密码（推荐）或 Cookie
-2. **资源站选择** — wp365（免费）或 mini4k（需会员）
+2. **资源站选择** — 自动检测已安装插件，逐个启用/禁用
 3. **自动分类** — OMDB API（推荐）/ 资源站抓取 / 关闭
 4. **保存目录** — 夸克网盘中的文件夹名
 
@@ -42,6 +41,7 @@ python3 scripts/cinema.py auto "星际穿越"           # Search + save + organi
 python3 scripts/cinema.py save "https://pan.quark.cn/s/xxx"  # Save a link
 python3 scripts/cinema.py organize <fid> "电影名" --type movie  # Organize
 python3 scripts/cinema.py plugins                    # List plugins
+python3 scripts/setup.py                             # Re-run setup wizard
 ```
 
 ## Configuration
@@ -55,8 +55,7 @@ Edit `config.json` (created by setup wizard):
     "password": "your_password"
   },
   "plugins": {
-    "wp365": { "enabled": true },
-    "mini4k": { "enabled": false, "username": "", "password": "" }
+    "wp365": { "enabled": true }
   },
   "save_folder": "夸克影视",
   "omdb_api_key": ""
@@ -70,58 +69,27 @@ Edit `config.json` (created by setup wizard):
 | `username` + `password` | Auto-refreshes | Need account |
 | `cookie` | No account needed | Expires ~7 days |
 
-### Resource Plugins
-
-| Plugin | Auth | Notes |
-|--------|------|-------|
-| `wp365` | No | Free aggregation, quark + baidu links |
-| `mini4k` | Paid | Premium 4K resources, best genre data |
-
 ### Genre Classification
-
-Three modes:
 
 | Mode | Config | Accuracy | Cost |
 |------|--------|----------|------|
 | OMDB API | `"omdb_api_key": "your_key"` | High | Free, 1000 req/day |
-| Resource scrape | `"omdb_api_key": ""` + mini4k enabled | Medium | Free |
-| Disabled | `"omdb_api_key": ""`, no mini4k | N/A | Free |
+| Resource scrape | `"omdb_api_key": ""` | Medium | Free |
+| Disabled | (movies go to flat structure) | N/A | Free |
 
 Get a free OMDB key at [omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx) — just enter your email.
 
 Genre results cached in `scripts/genre_cache.json`.
 
-## Library Structure
-
-```
-夸克影视/
-├── 动作/
-│   └── 金谍行动 (2026)/
-│       └── In.the.Grey.2026.2160p.WEB-DL.mkv
-├── 剧情/
-│   └── 大濛 (2025)/
-│       └── A.Foggy.Tale.2025.1080p.NF.WEB-DL.mkv
-├── 科幻/
-│   └── 流浪地球2 (2023)/
-│       └── 流浪地球2 (2023).mkv
-└── 其他/
-    └── 未识别类型的电影 (2024)/
-
-夸克影视/剧情/百年孤独/     ← TV shows
-├── Season 01/
-│   ├── 百年孤独 - S01E01.mkv
-│   └── 百年孤独 - S01E02.mkv
-```
-
-Infuse/Plex compatible naming:
-- Movie: `Movie Name (Year).ext`
-- TV: `Show Name/Season XX/Show Name - SXXEXX.ext`
-
 ## Adding Resource Sites
+
+Drop a `.py` plugin file into `scripts/plugins/`:
 
 ```bash
 cp scripts/plugins/example.py scripts/plugins/your_site.py
 ```
+
+Implement two methods:
 
 ```python
 from plugins import ResourcePlugin, ResourceResult
@@ -138,7 +106,28 @@ class Plugin(ResourcePlugin):
         ...
 ```
 
-Enable: `{ "plugins": { "your_site": { "enabled": true } } }`
+Then enable in `config.json` or re-run `setup.py`. See `scripts/plugins/example.py` for a full template.
+
+## Library Structure
+
+```
+夸克影视/
+├── 动作/
+│   └── 金谍行动 (2026)/
+│       └── In.the.Grey.2026.2160p.WEB-DL.mkv
+├── 剧情/
+│   └── 大濛 (2025)/
+│       └── A.Foggy.Tale.2025.1080p.NF.WEB-DL.mkv
+├── 科幻/
+│   └── 流浪地球2 (2023)/
+│       └── 流浪地球2 (2023).mkv
+└── 其他/
+    └── 未识别类型的电影 (2024)/
+```
+
+Infuse/Plex compatible naming:
+- Movie: `Movie Name (Year).ext`
+- TV: `Show Name/Season XX/Show Name - SXXEXX.ext`
 
 ## Quality Scoring
 
