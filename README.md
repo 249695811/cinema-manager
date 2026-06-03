@@ -1,13 +1,13 @@
 # 🎬 Cinema Manager - Hermes Skill
 
-A [Hermes Agent](https://github.com/nousresearch/hermes-agent) skill for automated movie/TV resource search, Quark cloud drive save, and media library management with auto genre classification.
+A [Hermes Agent](https://github.com/nousresearch/hermes-agent) skill for personal media library management — discover content, save to Quark cloud drive, and auto-organize with genre classification.
 
 ## Features
 
-- 🔍 **Multi-site search** — plugin system, add any resource site
+- 🔍 **Multi-source search** — plugin system, add any content source
 - 📊 **Quality scoring** — auto-ranks by resolution, source, HDR, audio, codec, subtitles
 - ☁️ **Quark save** — one-click save to your Quark cloud drive
-- 🎭 **Genre auto-classification** — OMDB API or resource site scraping, with local cache
+- 🎭 **Genre auto-classification** — OMDB API or content source scraping, with local cache
 - 📁 **Library management** — auto-organize files for Infuse/Plex/Jellyfin
 
 ## Quick Start
@@ -20,8 +20,8 @@ python3 ~/.hermes/skills/cinema-manager/scripts/setup.py
 
 Setup wizard walks you through:
 1. **夸克网盘登录** — 账号密码（推荐）或 Cookie
-2. **资源站选择** — 自动检测已安装插件，逐个启用/禁用
-3. **自动分类** — OMDB API（推荐）/ 资源站抓取 / 关闭
+2. **内容源选择** — 自动检测已安装插件，逐个启用/禁用
+3. **自动分类** — OMDB API（推荐）/ 内容源抓取 / 关闭
 4. **保存目录** — 夸克网盘中的文件夹名
 
 ## Usage
@@ -74,14 +74,14 @@ Edit `config.json` (created by setup wizard):
 | Mode | Config | Accuracy | Cost |
 |------|--------|----------|------|
 | OMDB API | `"omdb_api_key": "your_key"` | High | Free, 1000 req/day |
-| Resource scrape | `"omdb_api_key": ""` | Medium | Free |
+| Content scrape | `"omdb_api_key": ""` | Medium | Free |
 | Disabled | (movies go to flat structure) | N/A | Free |
 
 Get a free OMDB key at [omdbapi.com/apikey.aspx](http://www.omdbapi.com/apikey.aspx) — just enter your email.
 
 Genre results cached in `scripts/genre_cache.json`.
 
-## Adding Resource Sites
+## Adding Content Sources
 
 Drop a `.py` plugin file into `scripts/plugins/`:
 
