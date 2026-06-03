@@ -38,78 +38,63 @@ GENRE_MAP = {
 }
 
 
-def lookup_genre(title: str, year: str = "") -> str:
-    """Look up movie genre via Tavily search. Returns Chinese genre name."""
-    query = f"{title} {year} 电影 类型 genre 动作 喜剧 科幻 剧情 恐怖 爱情 悬疑 动画".strip()
-    try:
-        result = subprocess.run(
-            ["curl", "-s", "--connect-timeout", "8",
-             "https://api.tavily.com/search",
-             "-H", "Content-Type: application/json",
-             "-d", json.dumps({
-                 "api_key": "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",
-                 "query": query, "search_depth": "basic", "max_results": 5,
-                 "include_answer": True
-             })],
-            capture_output=True, text=True, timeout=15
-        )
-        data = json.loads(result.stdout)
+def lookup_genre(title: str, year: str = "", omdb_key: str = "", cache_file: str = "") -> str:
+    """Look up movie genre. Uses OMDB API + local cache. Returns Chinese genre name."""
+    cache = {}
+    if cache_file:
+        try:
+            with open(cache_file) as f:
+                cache = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
-        # Use Tavily's AI answer first (more structured)
-        answer = data.get("answer", "")
-        # Then combine with search results
-        texts = [answer] + [r.get("content", "") for r in data.get("results", [])]
-        text = " ".join(texts).lower()
+    # Check cache first
+    cache_key = f"{title} ({year})" if year else title
+    if cache_key in cache:
+        return cache[cache_key]
 
-        # Look for explicit genre labels: "剧情片", "动作电影", "是一部科幻"
-        # Priority: explicit label > raw keyword
-        explicit_patterns = [
-            (r'(?:剧情|劇情|故事|文艺|文藝)片', "剧情"),
-            (r'(?:动作|動作|武打|格斗)片|(?:动作|動作)(?:电影|電影|片)', "动作"),
-            (r'(?:喜剧|喜劇|搞笑)片|(?:喜剧|喜劇)(?:电影|電影|片)', "喜剧"),
-            (r'(?:科幻|赛博)片|科幻(?:电影|電影|片)', "科幻"),
-            (r'(?:恐怖|惊悚|驚悚|灵异|靈異)片|恐怖(?:电影|電影|片)', "恐怖"),
-            (r'(?:爱情|愛情|浪漫|恋爱|戀愛)片|(?:爱情|愛情)(?:电影|電影|片)', "爱情"),
-            (r'(?:悬疑|懸疑|推理|烧脑|燒腦)片|(?:悬疑|懸疑)(?:电影|電影|片)', "悬疑"),
-            (r'(?:动画|動畫|动漫|動漫)片|(?:动画|動畫)(?:电影|電影|片)', "动画"),
-            (r'(?:战争|戰爭|军事|軍事)片|(?:战争|戰爭)(?:电影|電影|片)', "战争"),
-            (r'(?:犯罪|警匪)片|犯罪(?:电影|電影|片)', "犯罪"),
-            (r'(?:奇幻|魔幻|玄幻)片|奇幻(?:电影|電影|片)', "奇幻"),
-            (r'(?:冒险|冒險|探险|探險)片|(?:冒险|冒險)(?:电影|電影|片)', "冒险"),
-            (r'時代劇|时代剧', "剧情"),
-        ]
-        for pattern, genre in explicit_patterns:
-            if re.search(pattern, text):
-                return genre
+    genre = "其他"
 
-        # Fallback: count genre keywords with context filtering
-        # Avoid "白色恐怖" → horror false positive
-        genre_keywords = {
-            "动作": ["action", "动作", "武打", "格斗"],
-            "喜剧": ["comedy", "喜剧", "搞笑"],
-            "科幻": ["science fiction", "sci-fi", "科幻"],
-            "剧情": ["drama", "剧情", "文艺"],
-            "恐怖": ["horror", "恐怖片"],
-            "惊悚": ["thriller", "惊悚"],
-            "爱情": ["romance", "romantic", "爱情", "浪漫"],
-            "悬疑": ["mystery", "悬疑", "推理"],
-            "动画": ["animation", "animated", "动画"],
-            "战争": ["war", "战争"],
-            "犯罪": ["crime", "犯罪", "警匪"],
-            "奇幻": ["fantasy", "奇幻", "魔幻"],
-            "冒险": ["adventure", "冒险", "探险"],
-        }
-        scores = {}
-        for genre, keywords in genre_keywords.items():
-            for kw in keywords:
-                if kw in text:
-                    scores[genre] = scores.get(genre, 0) + 1
+    # Try OMDB API (free, 1000 req/day)
+    if omdb_key:
+        try:
+            import urllib.parse
+            params = urllib.parse.urlencode({"t": title, "y": year, "apikey": omdb_key})
+            result = subprocess.run(
+                ["curl", "-s", "--connect-timeout", "5",
+                 f"http://www.omdbapi.com/?{params}"],
+                capture_output=True, text=True, timeout=10
+            )
+            data = json.loads(result.stdout)
+            omdb_genre = data.get("Genre", "")  # e.g. "Action, Thriller"
+            if omdb_genre:
+                genre = _map_omdb_genre(omdb_genre.split(",")[0].strip())
+        except Exception:
+            pass
 
-        if scores:
-            return max(scores, key=scores.get)
-    except Exception:
-        pass
-    return "其他"
+    # Cache the result
+    if cache_file and genre != "其他":
+        cache[cache_key] = genre
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(cache, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    return genre
+
+
+def _map_omdb_genre(english_genre: str) -> str:
+    """Map OMDB English genre to Chinese."""
+    mapping = {
+        "Action": "动作", "Adventure": "冒险", "Animation": "动画",
+        "Comedy": "喜剧", "Crime": "犯罪", "Documentary": "纪录片",
+        "Drama": "剧情", "Family": "家庭", "Fantasy": "奇幻",
+        "History": "历史", "Horror": "恐怖", "Music": "音乐",
+        "Mystery": "悬疑", "Romance": "爱情", "Sci-Fi": "科幻",
+        "Thriller": "惊悚", "War": "战争", "Western": "西部",
+    }
+    return mapping.get(english_genre, "其他")
 
 
 # ── Scene name detection ──
@@ -205,9 +190,12 @@ def format_filename(info: dict, ext: str = "mkv") -> str:
 class LibraryManager:
     """Manage organized media library in Quark drive."""
 
-    def __init__(self, quark: QuarkClient, library_root: str = "影视资源"):
+    def __init__(self, quark: QuarkClient, library_root: str = "影视资源",
+                 omdb_key: str = "", genre_cache_file: str = ""):
         self.quark = quark
         self.library_root = library_root
+        self.omdb_key = omdb_key
+        self.genre_cache_file = genre_cache_file
         self._root_id = None
 
     def _api(self, method: str, *args, **kwargs):
@@ -279,7 +267,7 @@ class LibraryManager:
         folder_name = format_folder_name(info)
 
         # Look up genre → create genre subfolder
-        genre = lookup_genre(info.get("cn_name") or info.get("en_name") or info.get("title", ""), info.get("year", ""))
+        genre = lookup_genre(info.get("cn_name") or info.get("en_name") or info.get("title", ""), info.get("year", ""), self.omdb_key, self.genre_cache_file)
         print(f"🎭 Genre: {genre}", file=sys.stderr)
         genre_id = self.get_or_create_folder(genre, root_id)
         if not genre_id:
@@ -358,7 +346,7 @@ class LibraryManager:
             original_name = ""
 
         # Look up genre
-        genre = lookup_genre(show_name)
+        genre = lookup_genre(show_name, omdb_key=self.omdb_key, cache_file=self.genre_cache_file)
         print(f"🎭 Genre: {genre}", file=sys.stderr)
         genre_id = self.get_or_create_folder(genre, root_id)
         if not genre_id:

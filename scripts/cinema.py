@@ -199,7 +199,9 @@ def cmd_auto(query: str, config: dict):
         if saved_fids:
             from library import extract_movie_info
             info = extract_movie_info(best.title)
-            lib = LibraryManager(client, library_root=folder)
+            lib = LibraryManager(client, library_root=folder,
+                                 omdb_key=config.get("omdb_api_key", ""),
+                                 genre_cache_file=os.path.join(os.path.dirname(__file__), "genre_cache.json"))
 
             for fid in saved_fids:
                 org_result = lib.organize_movie(fid, best.title, info.get("year", ""))
@@ -219,7 +221,9 @@ def cmd_auto(query: str, config: dict):
 def cmd_organize(fid: str, title: str, config: dict, content_type: str = "movie",
                  season: int = 1, episode: int = 0):
     client = get_quark_client(config)
-    lib = LibraryManager(client, library_root=config.get("save_folder", "影视资源"))
+    lib = LibraryManager(client, library_root=config.get("save_folder", "影视资源"),
+                         omdb_key=config.get("omdb_api_key", ""),
+                         genre_cache_file=os.path.join(os.path.dirname(__file__), "genre_cache.json"))
 
     if content_type == "tv":
         result = lib.organize_tv_show(fid, title, season=season, episode=episode)
