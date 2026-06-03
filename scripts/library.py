@@ -13,9 +13,103 @@ Folder structure (Infuse/Plex compatible):
 import re
 import sys
 import json
+import subprocess
 from typing import Optional
 
 from quark import QuarkClient
+
+
+# ── Genre lookup via Tavily ──
+
+GENRE_MAP = {
+    "action": "动作", "adventure": "冒险", "animation": "动画",
+    "comedy": "喜剧", "crime": "犯罪", "documentary": "纪录片",
+    "drama": "剧情", "family": "家庭", "fantasy": "奇幻",
+    "history": "历史", "horror": "恐怖", "music": "音乐",
+    "mystery": "悬疑", "romance": "爱情", "romantic": "爱情",
+    "science fiction": "科幻", "sci-fi": "科幻", "scifi": "科幻",
+    "thriller": "惊悚", "war": "战争", "western": "西部",
+    "动作": "动作", "冒险": "冒险", "动画": "动画",
+    "喜剧": "喜剧", "犯罪": "犯罪", "纪录片": "纪录片",
+    "剧情": "剧情", "家庭": "家庭", "奇幻": "奇幻",
+    "历史": "历史", "恐怖": "恐怖", "音乐": "音乐",
+    "悬疑": "悬疑", "爱情": "爱情", "科幻": "科幻",
+    "惊悚": "惊悚", "战争": "战争", "西部": "西部",
+}
+
+
+def lookup_genre(title: str, year: str = "") -> str:
+    """Look up movie genre via Tavily search. Returns Chinese genre name."""
+    query = f"{title} {year} 电影 类型 genre 动作 喜剧 科幻 剧情 恐怖 爱情 悬疑 动画".strip()
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "--connect-timeout", "8",
+             "https://api.tavily.com/search",
+             "-H", "Content-Type: application/json",
+             "-d", json.dumps({
+                 "api_key": "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",
+                 "query": query, "search_depth": "basic", "max_results": 5,
+                 "include_answer": True
+             })],
+            capture_output=True, text=True, timeout=15
+        )
+        data = json.loads(result.stdout)
+
+        # Use Tavily's AI answer first (more structured)
+        answer = data.get("answer", "")
+        # Then combine with search results
+        texts = [answer] + [r.get("content", "") for r in data.get("results", [])]
+        text = " ".join(texts).lower()
+
+        # Look for explicit genre labels: "剧情片", "动作电影", "是一部科幻"
+        # Priority: explicit label > raw keyword
+        explicit_patterns = [
+            (r'(?:剧情|劇情|故事|文艺|文藝)片', "剧情"),
+            (r'(?:动作|動作|武打|格斗)片|(?:动作|動作)(?:电影|電影|片)', "动作"),
+            (r'(?:喜剧|喜劇|搞笑)片|(?:喜剧|喜劇)(?:电影|電影|片)', "喜剧"),
+            (r'(?:科幻|赛博)片|科幻(?:电影|電影|片)', "科幻"),
+            (r'(?:恐怖|惊悚|驚悚|灵异|靈異)片|恐怖(?:电影|電影|片)', "恐怖"),
+            (r'(?:爱情|愛情|浪漫|恋爱|戀愛)片|(?:爱情|愛情)(?:电影|電影|片)', "爱情"),
+            (r'(?:悬疑|懸疑|推理|烧脑|燒腦)片|(?:悬疑|懸疑)(?:电影|電影|片)', "悬疑"),
+            (r'(?:动画|動畫|动漫|動漫)片|(?:动画|動畫)(?:电影|電影|片)', "动画"),
+            (r'(?:战争|戰爭|军事|軍事)片|(?:战争|戰爭)(?:电影|電影|片)', "战争"),
+            (r'(?:犯罪|警匪)片|犯罪(?:电影|電影|片)', "犯罪"),
+            (r'(?:奇幻|魔幻|玄幻)片|奇幻(?:电影|電影|片)', "奇幻"),
+            (r'(?:冒险|冒險|探险|探險)片|(?:冒险|冒險)(?:电影|電影|片)', "冒险"),
+            (r'時代劇|时代剧', "剧情"),
+        ]
+        for pattern, genre in explicit_patterns:
+            if re.search(pattern, text):
+                return genre
+
+        # Fallback: count genre keywords with context filtering
+        # Avoid "白色恐怖" → horror false positive
+        genre_keywords = {
+            "动作": ["action", "动作", "武打", "格斗"],
+            "喜剧": ["comedy", "喜剧", "搞笑"],
+            "科幻": ["science fiction", "sci-fi", "科幻"],
+            "剧情": ["drama", "剧情", "文艺"],
+            "恐怖": ["horror", "恐怖片"],
+            "惊悚": ["thriller", "惊悚"],
+            "爱情": ["romance", "romantic", "爱情", "浪漫"],
+            "悬疑": ["mystery", "悬疑", "推理"],
+            "动画": ["animation", "animated", "动画"],
+            "战争": ["war", "战争"],
+            "犯罪": ["crime", "犯罪", "警匪"],
+            "奇幻": ["fantasy", "奇幻", "魔幻"],
+            "冒险": ["adventure", "冒险", "探险"],
+        }
+        scores = {}
+        for genre, keywords in genre_keywords.items():
+            for kw in keywords:
+                if kw in text:
+                    scores[genre] = scores.get(genre, 0) + 1
+
+        if scores:
+            return max(scores, key=scores.get)
+    except Exception:
+        pass
+    return "其他"
 
 
 # ── Scene name detection ──
@@ -161,9 +255,7 @@ class LibraryManager:
     def organize_movie(self, source_fid: str, title: str, year: str = "") -> dict:
         """
         Organize a saved movie file into the library.
-
-        - If filename is scene-standard → keep it, just move into folder
-        - If filename is messy → rename to Movie Name (Year).ext
+        Structure: library_root/Genre/ Movie Name (Year)/files
         """
         root_id = self.ensure_library_root()
         if not root_id:
@@ -179,12 +271,20 @@ class LibraryManager:
             original_name = ""
             is_dir = False
 
-        # Parse movie info from title (used for folder name regardless)
+        # Parse movie info from title
         info = extract_movie_info(title)
         if year:
             info["year"] = year
 
         folder_name = format_folder_name(info)
+
+        # Look up genre → create genre subfolder
+        genre = lookup_genre(info.get("cn_name") or info.get("en_name") or info.get("title", ""), info.get("year", ""))
+        print(f"🎭 Genre: {genre}", file=sys.stderr)
+        genre_id = self.get_or_create_folder(genre, root_id)
+        if not genre_id:
+            print(f"⚠️  Failed to create genre folder, falling back to root", file=sys.stderr)
+            genre_id = root_id
 
         if is_dir:
             # Source is already a folder → rename it directly, no wrapper
@@ -194,30 +294,29 @@ class LibraryManager:
                     print(f"✏️  Renamed folder: {original_name} → {folder_name}", file=sys.stderr)
                 except Exception as e:
                     print(f"⚠️  Rename failed: {e}", file=sys.stderr)
-            # Move to library root
+            # Move to genre folder
             try:
-                self._api("move_files", [source_fid], root_id)
+                self._api("move_files", [source_fid], genre_id)
                 return {
                     "status": "ok",
-                    "path": f"{self.library_root}/{folder_name}",
+                    "path": f"{self.library_root}/{genre}/{folder_name}",
                     "folder_id": source_fid,
+                    "genre": genre,
                     "kept_original": False,
                 }
             except Exception as e:
                 return {"error": f"Move failed: {e}"}
 
         # Source is a file → create folder and move file into it
-        folder_id = self.get_or_create_folder(folder_name, root_id)
+        folder_id = self.get_or_create_folder(folder_name, genre_id)
         if not folder_id:
             return {"error": f"Failed to create folder: {folder_name}"}
 
         # Decide: keep original name or rename
         if original_name:
             if is_scene_name(original_name):
-                # Scene-standard name → keep as-is
                 print(f"📋 Keeping original name: {original_name}", file=sys.stderr)
             else:
-                # Messy name → rename
                 ext = original_name.rsplit(".", 1)[-1] if "." in original_name else "mkv"
                 new_name = format_filename(info, ext)
                 try:
@@ -231,8 +330,9 @@ class LibraryManager:
             self._api("move_files", [source_fid], folder_id)
             return {
                 "status": "ok",
-                "path": f"{self.library_root}/{folder_name}",
+                "path": f"{self.library_root}/{genre}/{folder_name}",
                 "folder_id": folder_id,
+                "genre": genre,
                 "kept_original": is_scene_name(original_name) if original_name else False,
             }
         except Exception as e:
@@ -243,9 +343,7 @@ class LibraryManager:
                          episode_title: str = "") -> dict:
         """
         Organize a saved TV show file.
-
-        - Scene-standard name → keep, just move into Season folder
-        - Messy name → rename to Show Name - SXXEXX.ext
+        Structure: library_root/Genre/Show Name/Season XX/files
         """
         root_id = self.ensure_library_root()
         if not root_id:
@@ -259,8 +357,15 @@ class LibraryManager:
         except Exception:
             original_name = ""
 
+        # Look up genre
+        genre = lookup_genre(show_name)
+        print(f"🎭 Genre: {genre}", file=sys.stderr)
+        genre_id = self.get_or_create_folder(genre, root_id)
+        if not genre_id:
+            genre_id = root_id
+
         # Create show/season folders
-        show_folder_id = self.get_or_create_folder(clean_display_name(show_name), root_id)
+        show_folder_id = self.get_or_create_folder(clean_display_name(show_name), genre_id)
         if not show_folder_id:
             return {"error": f"Failed to create folder: {show_name}"}
 
@@ -290,8 +395,9 @@ class LibraryManager:
             self._api("move_files", [source_fid], season_folder_id)
             return {
                 "status": "ok",
-                "path": f"{self.library_root}/{show_name}/{season_name}",
+                "path": f"{self.library_root}/{genre}/{show_name}/{season_name}",
                 "folder_id": season_folder_id,
+                "genre": genre,
                 "kept_original": is_scene_name(original_name) if original_name else False,
             }
         except Exception as e:
