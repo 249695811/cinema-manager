@@ -58,6 +58,8 @@ def clean_display_name(name: str) -> str:
     name = re.split(r'[·。：：]+', name)[0]
     # Remove trailing site names
     name = re.sub(r'(夸克网盘|百度网盘|迅雷云盘|网盘链接|链接)\s*$', '', name)
+    # Remove trailing year in parentheses (avoid double-year in folder names)
+    name = re.sub(r'\s*[\(（]\d{4}[\)）]\s*$', '', name)
     # Clean whitespace
     name = re.sub(r'\s+', ' ', name).strip()
     return name

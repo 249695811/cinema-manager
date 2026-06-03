@@ -197,8 +197,8 @@ def cmd_auto(query: str, config: dict):
         saved_fids = save_as.get("save_as_top_fids", [])
 
         if saved_fids:
-            from library import parse_movie_info
-            info = parse_movie_info(best.title)
+            from library import extract_movie_info
+            info = extract_movie_info(best.title)
             lib = LibraryManager(client, library_root=folder)
 
             for fid in saved_fids:
