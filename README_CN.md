@@ -51,8 +51,7 @@ python3 scripts/setup.py                             # 重新运行设置向导
 ```json
 {
   "quark": {
-    "username": "你的手机号或邮箱",
-    "password": "你的密码"
+    "cookie": "从浏览器获取的cookie"
   },
   "plugins": {
     "wp365": { "enabled": true }
@@ -64,10 +63,9 @@ python3 scripts/setup.py                             # 重新运行设置向导
 
 ### 夸克认证
 
-| 方式 | 优点 | 缺点 |
-|------|------|------|
-| `username` + `password` | 自动刷新 | 需要账号 |
-| `cookie` | 无需账号 | 约7天过期 |
+登录 [pan.quark.cn](https://pan.quark.cn)，打开浏览器开发者工具（F12）→ Network 标签 → 随便点一个请求 → 复制 `Cookie` 请求头的值，粘贴到 `config.json` 的 `quark.cookie` 字段。
+
+Cookie 约 7 天过期，过期后重新从浏览器复制即可。
 
 ### 自动分类
 

@@ -18,7 +18,7 @@ python3 scripts/cinema.py plugins           # list plugins
 ## Config
 
 `config.json` (not committed, create from `config.example.json`):
-- `quark.username` / `quark.password` — Quark login
+- `quark.cookie` — Quark session cookie (login to pan.quark.cn, copy cookie from browser DevTools)
 - `plugins` — enable/disable content source plugins
 - `save_folder` — Quark folder name (default: "影视资源")
 

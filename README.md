@@ -51,8 +51,7 @@ Edit `config.json` (created by setup wizard):
 ```json
 {
   "quark": {
-    "username": "your_phone_or_email",
-    "password": "your_password"
+    "cookie": "your_cookie_from_browser"
   },
   "plugins": {
     "wp365": { "enabled": true }
@@ -64,10 +63,9 @@ Edit `config.json` (created by setup wizard):
 
 ### Quark Auth
 
-| Method | Pros | Cons |
-|--------|------|------|
-| `username` + `password` | Auto-refreshes | Need account |
-| `cookie` | No account needed | Expires ~7 days |
+Login to [pan.quark.cn](https://pan.quark.cn), open browser DevTools (F12) → Network tab → copy the `Cookie` header value from any request. Paste it into `config.json` as `quark.cookie`.
+
+Cookies expire after ~7 days. When expired, grab a fresh one from the browser.
 
 ### Genre Classification
 

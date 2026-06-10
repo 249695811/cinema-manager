@@ -19,11 +19,9 @@ COOKIE_CACHE = os.path.expanduser("~/.cinema-manager/quark_cookies.json")
 
 
 class QuarkClient:
-    """Quark cloud drive client with auto-login support."""
+    """Quark cloud drive client with cookie-based authentication."""
 
-    def __init__(self, username: str = "", password: str = "", cookie: str = ""):
-        self.username = username
-        self.password = password
+    def __init__(self, cookie: str = ""):
         self._cookie = cookie
         self.client = httpx.Client(
             follow_redirects=True,
@@ -61,59 +59,14 @@ class QuarkClient:
             }, f)
 
     def login(self) -> bool:
-        """Login with username/password to get fresh cookies."""
-        if not self.username or not self.password:
-            return bool(self.cookie)
-
-        # quarkpan library handles login
-        try:
-            sys.path.insert(0, self._quarkpan_path())
-            from quark_client import create_client
-            client = create_client(auto_login=True)
-            if client.is_logged_in():
-                # Extract cookies from the client
-                self._cookie = "; ".join(
-                    f"{k}={v}" for k, v in client.api_client._client.cookies.items()
-                )
-                self._save_cookie_cache()
-                return True
-        except Exception:
-            pass
-
+        """Check if cookie is available."""
         return bool(self.cookie)
-
-    def _quarkpan_path(self) -> str:
-        """Find quarkpan installation path."""
-        candidates = [
-            os.path.expanduser("~/.hermes-web-ui/desktop-runtime/linux-x64/python/lib/python3.12/site-packages"),
-            "/usr/lib/python3/dist-packages",
-        ]
-        for p in candidates:
-            if os.path.exists(os.path.join(p, "quark_client")):
-                return p
-        return ""
 
     def save_share(self, share_url: str, folder_name: str = "") -> dict:
         """Save a quark share link to drive."""
         if not self.cookie:
             return {"error": "Not logged in"}
 
-        # Try quarkpan library first
-        try:
-            import sys
-            sys.path.insert(0, self._quarkpan_path())
-            from quark_client import create_client
-            client = create_client(cookies=self.cookie, auto_login=False)
-            kwargs = {}
-            if folder_name:
-                kwargs["target_folder_name"] = folder_name
-            return client.save_shared_files(share_url, **kwargs)
-        except ImportError:
-            pass
-        except Exception as e:
-            return {"error": str(e)}
-
-        # Fallback: raw HTTP
         return self._save_raw(share_url)
 
     def _save_raw(self, share_url: str) -> dict:

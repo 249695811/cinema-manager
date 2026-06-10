@@ -62,8 +62,6 @@ def load_plugins(config: dict) -> list:
 def get_quark_client(config: dict) -> QuarkClient:
     quark_conf = config.get("quark", {})
     client = QuarkClient(
-        username=quark_conf.get("username", ""),
-        password=quark_conf.get("password", ""),
         cookie=quark_conf.get("cookie", ""),
     )
     if not client.cookie:

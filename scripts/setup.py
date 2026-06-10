@@ -53,7 +53,7 @@ def load_config() -> dict:
         with open(EXAMPLE_PATH) as f:
             return json.load(f)
     return {
-        "quark": {"username": "", "password": "", "cookie": ""},
+        "quark": {"cookie": ""},
         "plugins": {},
         "save_folder": "夸克影视",
         "omdb_api_key": "",
@@ -82,25 +82,11 @@ def main():
 
     # ── Step 1: Quark Auth ──
     print("\n📁 第一步：夸克网盘登录\n")
-    print("  方式一：账号密码（推荐，自动刷新）")
-    print("  方式二：Cookie（手动，约7天过期）")
+    print("  获取Cookie：浏览器打开 pan.quark.cn → F12 → Network → 复制任意请求的 Cookie 头")
     print()
 
-    method = ask("选择登录方式 (1=账号密码, 2=Cookie)", "1")
-
-    if method == "1":
-        username = ask("夸克账号（手机号或邮箱）", config["quark"].get("username", ""))
-        password = ask("夸克密码", config["quark"].get("password", ""))
-        config["quark"]["username"] = username
-        config["quark"]["password"] = password
-        config["quark"]["cookie"] = ""
-    else:
-        print("\n  获取Cookie：浏览器打开 pan.quark.cn → F12 → Application → Cookies")
-        print("  复制所有cookie内容粘贴过来\n")
-        cookie = ask("Cookie", config["quark"].get("cookie", ""))
-        config["quark"]["cookie"] = cookie
-        config["quark"]["username"] = ""
-        config["quark"]["password"] = ""
+    cookie = ask("Cookie", config["quark"].get("cookie", ""))
+    config["quark"]["cookie"] = cookie
 
     # ── Step 2: Resource Sites ──
     print(f"\n🔍 第二步：资源站配置（发现 {len(available_plugins)} 个插件）\n")
@@ -168,9 +154,7 @@ def main():
     print("\n" + "=" * 50)
     print("📋 配置摘要")
     print("=" * 50)
-    if config["quark"].get("username"):
-        print(f"  夸克登录：账号 {config['quark']['username']}")
-    elif config["quark"].get("cookie"):
+    if config["quark"].get("cookie"):
         print(f"  夸克登录：Cookie（{len(config['quark']['cookie'])}字符）")
     else:
         print("  ⚠️  夸克未配置！")
