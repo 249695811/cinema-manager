@@ -1,6 +1,9 @@
 ---
 name: cinema-manager
 description: Personal media library management — discover content, save to Quark cloud drive, auto-organize for Infuse/Plex. Plugin system for content sources. Use when user wants to find/watch movies, save to cloud drive, or manage media library.
+version: 1.0.0
+license: MIT
+metadata.hermes.tags: []
 ---
 
 # Cinema Manager
