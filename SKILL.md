@@ -1,7 +1,7 @@
 ---
-name: cinema-manager
-description: Personal media library management — discover content, save to Quark cloud drive, auto-organize for Infuse/Plex. Plugin system for content sources. Use when user wants to find/watch movies, save to cloud drive, or manage media library.
----
+name: "cinema-manager"
+description: "Use when personal media library management \u2014 discover content, save to Quark cloud drive, auto-organize for Infuse/Plex. Plugin system for content sources. Use when user wants to find/watch movies, save to cloud drive, or manage media library."
+----
 
 # Cinema Manager
 
